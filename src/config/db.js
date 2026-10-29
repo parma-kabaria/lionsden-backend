@@ -3,53 +3,64 @@ import mongoose from 'mongoose';
 import { config } from './index.js';
 import { logger } from './logger.js';
 
-// Use public DNS servers to resolve MongoDB Atlas SRV records.
-// Many local ISP/router DNS servers fail or refuse SRV queries ('querySrv ECONNREFUSED').
-dns.setServers(['8.8.8.8', '8.8.4.4']);
+// Use public DNS servers only for local development on Windows / ISPs that fail SRV lookups.
+// In AWS Lambda / Vercel, AWS has its own VPC DNS and blocks external port 53.
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4']);
+  } catch {
+    // Ignore and fallback to system DNS
+  }
+}
 
 let isReplicaSet = false;
+let connPromise = null;
 
 export const connectDatabase = async () => {
   if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
   }
 
-  try {
-    const conn = await mongoose.connect(config.db.uri, {
-      autoIndex: true,
-      serverSelectionTimeoutMS: 5000,
-    });
-
-    logger.info(`MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
-
-    // Detect if connected to a replica set (required for multi-document ACID transactions)
-    try {
-      const admin = conn.connection.db.admin();
-      const status = await admin.command({ replSetGetStatus: 1 });
-      isReplicaSet = Boolean(status && status.ok === 1);
-      logger.info(
-        `MongoDB Replica Set status: ${isReplicaSet ? 'ENABLED (Transactions active)' : 'STANDALONE (Atomic operations fallback active)'}`
-      );
-    } catch {
-      isReplicaSet = false;
-      logger.info(
-        'MongoDB Replica Set status: STANDALONE (Multi-document transactions not supported by standalone instance, atomic fallback active)'
-      );
-    }
-
-    mongoose.connection.on('error', err => {
-      logger.error({ err }, 'MongoDB runtime error');
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      logger.warn('MongoDB disconnected. Reconnecting...');
-    });
-
-    return conn;
-  } catch (error) {
-    logger.error({ error }, 'Failed to connect to MongoDB');
-    throw error;
+  if (connPromise) {
+    return connPromise;
   }
+
+  connPromise = (async () => {
+    try {
+      const conn = await mongoose.connect(config.db.uri, {
+        autoIndex: true,
+        serverSelectionTimeoutMS: 8000,
+      });
+
+      logger.info(`MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
+
+      // Detect replica set status
+      try {
+        const admin = conn.connection.db.admin();
+        const status = await admin.command({ replSetGetStatus: 1 });
+        isReplicaSet = Boolean(status && status.ok === 1);
+      } catch {
+        isReplicaSet = false;
+      }
+
+      mongoose.connection.on('error', err => {
+        logger.error({ err }, 'MongoDB runtime error');
+      });
+
+      mongoose.connection.on('disconnected', () => {
+        logger.warn('MongoDB disconnected. Reconnecting...');
+        connPromise = null;
+      });
+
+      return conn;
+    } catch (error) {
+      connPromise = null;
+      logger.error({ error }, 'Failed to connect to MongoDB');
+      throw error;
+    }
+  })();
+
+  return connPromise;
 };
 
 export const hasReplicaSet = () => isReplicaSet;
