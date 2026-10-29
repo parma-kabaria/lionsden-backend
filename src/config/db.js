@@ -1,6 +1,11 @@
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 import { config } from './index.js';
 import { logger } from './logger.js';
+
+// Use public DNS servers to resolve MongoDB Atlas SRV records.
+// Many local ISP/router DNS servers fail or refuse SRV queries ('querySrv ECONNREFUSED').
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 let isReplicaSet = false;
 
