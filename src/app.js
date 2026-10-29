@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 
 import { config } from './config/index.js';
 import { logger } from './config/logger.js';
+import { connectDatabase } from './config/db.js';
 import { swaggerDocument } from './docs/swagger.js';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { standardLimiter } from './common/middleware/rate-limiter.middleware.js';
@@ -68,6 +69,7 @@ app.use(
 
       return callback(null, false);
     },
+
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'Idempotency-Key'],
@@ -124,56 +126,61 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/ready', (req, res) => {
-  const isConnected = mongoose.connection.readyState === 1;
-  if (!isConnected) {
-    return res.status(503).json({
-      status: 'NOT_READY',
-      database: 'DISCONNECTED',
-      timestamp: new Date().toISOString(),
+    app.get('/ready', async (req, res) => {
+      try {
+        if (mongoose.connection.readyState !== 1) {
+          await connectDatabase();
+        }
+        return res.status(200).json({
+          status: 'READY',
+          database: 'CONNECTED',
+          host: mongoose.connection.host,
+          db: mongoose.connection.name,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        return res.status(503).json({
+          status: 'NOT_READY',
+          database: 'DISCONNECTED',
+          error: err.message,
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
-  }
 
-  return res.status(200).json({
-    status: 'READY',
-    database: 'CONNECTED',
-    timestamp: new Date().toISOString(),
-  });
-});
+    // Direct Availability route alias: /api/v1/availability
+    const availabilityRouter = express.Router();
+    availabilityRouter.use(authenticate);
+    availabilityRouter.get(
+      '/',
+      requirePermissions([PERMISSIONS.AVAILABILITY_SEARCH]),
+      enforceBranchScope({ source: 'query', field: 'branch' }),
+      validate({ query: searchAvailabilitySchema }),
+      bookingController.searchAvailability
+    );
 
-// Direct Availability route alias: /api/v1/availability
-const availabilityRouter = express.Router();
-availabilityRouter.use(authenticate);
-availabilityRouter.get(
-  '/',
-  requirePermissions([PERMISSIONS.AVAILABILITY_SEARCH]),
-  enforceBranchScope({ source: 'query', field: 'branch' }),
-  validate({ query: searchAvailabilitySchema }),
-  bookingController.searchAvailability
-);
+    // Mount API v1 Routes
+    const v1Router = express.Router();
+    v1Router.use('/auth', authRoutes);
+    v1Router.use('/users', userRoutes);
+    v1Router.use('/roles', roleRoutes);
+    v1Router.use('/branches', branchRoutes);
+    v1Router.use('/bungalows', bungalowRoutes);
+    v1Router.use('/availability', availabilityRouter);
+    v1Router.use('/pricing', pricingRoutes);
+    v1Router.use('/bookings', bookingRoutes);
+    v1Router.use('/customers', customerRoutes);
+    v1Router.use('/payments', paymentRoutes);
+    v1Router.use('/negotiations', negotiationRoutes);
+    v1Router.use('/maintenance', maintenanceRoutes);
+    v1Router.use('/dashboard', dashboardRoutes);
+    v1Router.use('/reports', reportRoutes);
+    v1Router.use('/audit-logs', auditLogRoutes);
 
-// Mount API v1 Routes
-const v1Router = express.Router();
-v1Router.use('/auth', authRoutes);
-v1Router.use('/users', userRoutes);
-v1Router.use('/roles', roleRoutes);
-v1Router.use('/branches', branchRoutes);
-v1Router.use('/bungalows', bungalowRoutes);
-v1Router.use('/availability', availabilityRouter);
-v1Router.use('/pricing', pricingRoutes);
-v1Router.use('/bookings', bookingRoutes);
-v1Router.use('/customers', customerRoutes);
-v1Router.use('/payments', paymentRoutes);
-v1Router.use('/negotiations', negotiationRoutes);
-v1Router.use('/maintenance', maintenanceRoutes);
-v1Router.use('/dashboard', dashboardRoutes);
-v1Router.use('/reports', reportRoutes);
-v1Router.use('/audit-logs', auditLogRoutes);
+    app.use(config.apiPrefix, v1Router);
 
-app.use(config.apiPrefix, v1Router);
+    // Centralized 404 and Error Handling
+    app.use(notFoundHandler);
+    app.use(errorHandler);
 
-// Centralized 404 and Error Handling
-app.use(notFoundHandler);
-app.use(errorHandler);
-
-export default app;
+    export default app;
