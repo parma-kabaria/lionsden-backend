@@ -1,0 +1,250 @@
+{
+  "info": {
+    "name": "LionsDen Resort Management System API",
+    "description": "Postman Collection for LionsDen Resort Backend API v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Checks",
+      "item": [
+        {
+          "name": "Liveness Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "http://localhost:5000/health" }
+          }
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "http://localhost:5000/ready" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Super Admin Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"superadmin@lionsdenresorts.com\",\n  \"password\": \"ChangeMeSuperSecret123!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login" }
+          }
+        },
+        {
+          "name": "Refresh Token Rotation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh-token" }
+          }
+        },
+        {
+          "name": "Get Current User (Me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me" }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/logout" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branches & Bungalows",
+      "item": [
+        {
+          "name": "List Branches",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/branches" }
+          }
+        },
+        {
+          "name": "List Bungalows",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/bungalows?limit=50" }
+          }
+        },
+        {
+          "name": "Search Availability",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/availability?branch={{branchId}}&checkIn=2026-11-01T14:00:00.000Z&checkOut=2026-11-03T11:00:00.000Z&category=2BHK"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings & Negotiations",
+      "item": [
+        {
+          "name": "Create Booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Rajesh Patel\",\n    \"phone\": \"+919876543210\",\n    \"email\": \"rajesh@example.com\"\n  },\n  \"branch\": \"{{branchId}}\",\n  \"bungalow\": \"{{bungalowId}}\",\n  \"checkIn\": \"2026-11-01T14:00:00.000Z\",\n  \"checkOut\": \"2026-11-03T11:00:00.000Z\",\n  \"guests\": { \"adults\": 2, \"children\": 1 },\n  \"foodOption\": \"WITH_FOOD\",\n  \"foodChargesPerNight\": 150000,\n  \"advancePayment\": 500000,\n  \"paymentMode\": \"UPI\",\n  \"transactionReference\": \"UPI-REF-001\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/bookings" }
+          }
+        },
+        {
+          "name": "Submit Negotiation Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking\": \"{{bookingId}}\",\n  \"requestedRent\": 550000,\n  \"reason\": \"Corporate client regular guest discount\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/negotiations" }
+          }
+        },
+        {
+          "name": "Approve Negotiation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Approved as corporate rate exception\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/negotiations/{{negotiationId}}/approve" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments & Ledger",
+      "item": [
+        {
+          "name": "Record Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"amount\": 300000,\n  \"type\": \"BALANCE\",\n  \"paymentMode\": \"CASH\",\n  \"notes\": \"Balance cash received at reception\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/payments" }
+          }
+        },
+        {
+          "name": "Reverse Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cashier duplicated the cash entry error\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/payments/{{paymentId}}/reverse" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard & Reports",
+      "item": [
+        {
+          "name": "Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/dashboard" }
+          }
+        },
+        {
+          "name": "Collections Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reports/collections" }
+          }
+        },
+        {
+          "name": "Occupancy Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reports/occupancy" }
+          }
+        },
+        {
+          "name": "Balances Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reports/balances" }
+          }
+        }
+      ]
+    }
+  ]
+}
