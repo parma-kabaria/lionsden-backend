@@ -13,7 +13,6 @@ router.use(authenticate);
 
 router.get(
   '/collections',
-  requirePermissions([PERMISSIONS.REPORTS_READ]),
   enforceBranchScope({ source: 'query', field: 'branchId' }),
   validate({ query: reportQuerySchema }),
   reportController.getCollectionsReport

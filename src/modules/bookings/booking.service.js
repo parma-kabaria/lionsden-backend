@@ -145,9 +145,6 @@ export const createBooking = async (data, req) => {
     throw new BadRequestError('Advance payment cannot exceed total booking amount');
   }
 
-  const totalPaid = advancePayment;
-  const outstandingBalance = totalAmount - totalPaid;
-
   // Execute with concurrency reservation locks
   const executeBookingCreation = async session => {
     // 1. Check for overlapping active bookings inside session
@@ -220,9 +217,9 @@ export const createBooking = async (data, req) => {
       appliedPricingRule: pricingResult.appliedRule || { id: null, name: '', festivalName: '' },
       extraCharges,
       totalAmount,
-      advancePayment,
-      totalPaid,
-      outstandingBalance,
+      advancePayment: 0,
+      totalPaid: 0,
+      outstandingBalance: totalAmount,
       status: BOOKING_STATUS.CONFIRMED,
       createdBy: req.user._id,
       specialRequests: data.specialRequests || '',

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Payment } from '../payments/payment.model.js';
 import { Booking } from '../bookings/booking.model.js';
+import { Branch } from '../branches/branch.model.js';
 import { toRupees } from '../../common/utils/currency.util.js';
 import { BOOKING_STATUS } from '../../config/constants.js';
 
@@ -63,8 +64,15 @@ export const getCollectionsReport = async ({ branchId, startDate, endDate } = {}
     { $sort: { totalPaise: -1 } },
   ]);
 
-  // 3. Breakdown by branch
-  const branchBreakdown = await Payment.aggregate([
+  // 3. Breakdown by branch (including all active branches in scope)
+  const activeBranches = await Branch.find({
+    isActive: true,
+    ...(branchId ? { _id: new mongoose.Types.ObjectId(branchId) } : {}),
+  })
+    .select('name code type')
+    .lean();
+
+  const branchPaymentStats = await Payment.aggregate([
     { $match: matchFilter },
     {
       $group: {
@@ -85,18 +93,67 @@ export const getCollectionsReport = async ({ branchId, startDate, endDate } = {}
         as: 'branchDetails',
       },
     },
-    { $unwind: '$branchDetails' },
     {
       $project: {
         branchId: '$_id',
-        branchName: '$branchDetails.name',
-        branchCode: '$branchDetails.code',
+        branchName: { $arrayElemAt: ['$branchDetails.name', 0] },
+        branchCode: { $arrayElemAt: ['$branchDetails.code', 0] },
         totalPaise: 1,
         transactionCount: 1,
       },
     },
-    { $sort: { totalPaise: -1 } },
   ]);
+
+  const paymentByBranchMap = new Map();
+  let maxBranchPaise = 0;
+
+  for (const stat of branchPaymentStats) {
+    if (stat.branchId) {
+      paymentByBranchMap.set(stat.branchId.toString(), stat);
+      if (stat.totalPaise > maxBranchPaise) {
+        maxBranchPaise = stat.totalPaise;
+      }
+    }
+  }
+
+  const branchMap = new Map();
+  for (const br of activeBranches) {
+    const stat = paymentByBranchMap.get(br._id.toString()) || { totalPaise: 0, transactionCount: 0 };
+    const paise = Math.max(0, stat.totalPaise);
+    const rupees = toRupees(paise);
+    const pct = maxBranchPaise > 0 ? Math.round((paise / maxBranchPaise) * 100) : 0;
+
+    branchMap.set(br._id.toString(), {
+      branchId: br._id,
+      branchName: br.name,
+      branchCode: br.code,
+      amountPaise: stat.totalPaise,
+      amountRupees: rupees,
+      totalCollected: rupees,
+      transactionCount: stat.transactionCount,
+      percentage: rupees > 0 ? Math.max(pct, 12) : 0,
+    });
+  }
+
+  for (const stat of branchPaymentStats) {
+    if (stat.branchId && !branchMap.has(stat.branchId.toString())) {
+      const paise = Math.max(0, stat.totalPaise);
+      const rupees = toRupees(paise);
+      const pct = maxBranchPaise > 0 ? Math.round((paise / maxBranchPaise) * 100) : 0;
+      branchMap.set(stat.branchId.toString(), {
+        branchId: stat.branchId,
+        branchName: stat.branchName || 'Unknown Branch',
+        branchCode: stat.branchCode || '',
+        amountPaise: stat.totalPaise,
+        amountRupees: rupees,
+        totalCollected: rupees,
+        transactionCount: stat.transactionCount,
+        percentage: rupees > 0 ? Math.max(pct, 12) : 0,
+      });
+    }
+  }
+
+  const byBranch = Array.from(branchMap.values()).sort((a, b) => b.totalCollected - a.totalCollected);
 
   // 4. Breakdown by collecting user
   const userBreakdown = await Payment.aggregate([
@@ -153,14 +210,7 @@ export const getCollectionsReport = async ({ branchId, startDate, endDate } = {}
       amountRupees: toRupees(item.totalPaise),
       transactionCount: item.transactionCount,
     })),
-    byBranch: branchBreakdown.map(item => ({
-      branchId: item.branchId,
-      branchName: item.branchName,
-      branchCode: item.branchCode,
-      amountPaise: item.totalPaise,
-      amountRupees: toRupees(item.totalPaise),
-      transactionCount: item.transactionCount,
-    })),
+    byBranch,
     byCollectingUser: userBreakdown.map(item => ({
       userId: item.userId,
       userName: item.userName,
