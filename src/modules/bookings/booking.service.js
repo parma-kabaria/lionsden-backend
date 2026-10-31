@@ -197,42 +197,42 @@ export const createBooking = async (data, req) => {
     await incrementCustomerBookings(customer._id, session);
 
     // 4. Create booking document
-    const [booking] = await Booking.create(
-      [
-        {
-          bookingId,
-          customer: {
-            name: data.customer.name,
-            phone: data.customer.phone,
-            email: data.customer.email || '',
-            customerRef: customer._id,
-          },
-          branch: branch._id,
-          bungalow: bungalow._id,
-          checkIn,
-          checkOut,
-          nights,
-          guests: data.guests,
-          foodOption: data.foodOption,
-          foodChargesPerNight,
-          totalFoodCharges,
-          standardRentPerNight,
-          specialRentPerNight,
-          finalRentPerNight,
-          appliedPricingRule: pricingResult.appliedRule || { id: null, name: '', festivalName: '' },
-          extraCharges,
-          totalAmount,
-          advancePayment,
-          totalPaid,
-          outstandingBalance,
-          status: BOOKING_STATUS.CONFIRMED,
-          createdBy: req.user._id,
-          specialRequests: data.specialRequests || '',
-          idempotencyKey: data.idempotencyKey || null,
-        },
-      ],
-      { session: session || null }
-    );
+    const bookingDoc = {
+      bookingId,
+      customer: {
+        name: data.customer.name,
+        phone: data.customer.phone,
+        email: data.customer.email || '',
+        customerRef: customer._id,
+      },
+      branch: branch._id,
+      bungalow: bungalow._id,
+      checkIn,
+      checkOut,
+      nights,
+      guests: data.guests,
+      foodOption: data.foodOption,
+      foodChargesPerNight,
+      totalFoodCharges,
+      standardRentPerNight,
+      specialRentPerNight,
+      finalRentPerNight,
+      appliedPricingRule: pricingResult.appliedRule || { id: null, name: '', festivalName: '' },
+      extraCharges,
+      totalAmount,
+      advancePayment,
+      totalPaid,
+      outstandingBalance,
+      status: BOOKING_STATUS.CONFIRMED,
+      createdBy: req.user._id,
+      specialRequests: data.specialRequests || '',
+    };
+
+    if (data.idempotencyKey) {
+      bookingDoc.idempotencyKey = data.idempotencyKey;
+    }
+
+    const [booking] = await Booking.create([bookingDoc], { session: session || null });
 
     // 5. If advance payment was made, record payment ledger entry
     if (advancePayment > 0) {
@@ -244,6 +244,7 @@ export const createBooking = async (data, req) => {
           paymentMode: data.paymentMode,
           transactionReference: data.transactionReference || '',
           notes: 'Advance deposit at time of booking creation',
+          idempotencyKey: data.idempotencyKey ? `${data.idempotencyKey}-advance` : undefined,
         },
         req,
         session

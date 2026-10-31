@@ -8,18 +8,22 @@ import { logAudit } from '../audit-logs/audit-log.service.js';
  * @param {object} bungalow - Bungalow document
  * @param {Date} checkIn - Requested check-in date
  * @param {Date} checkOut - Requested check-out date
+ * @param {Array|null} preloadedCandidateRules - Optional pre-queried candidate rules to avoid N+1 DB queries in loops
  * @returns {Promise<{ standardRent: number, specialRent: number, appliedRule: object|null }>}
  */
-export const calculateApplicablePrice = async (bungalow, checkIn, checkOut) => {
+export const calculateApplicablePrice = async (bungalow, checkIn, checkOut, preloadedCandidateRules = null) => {
   const reqCheckIn = new Date(checkIn);
   const reqCheckOut = new Date(checkOut);
 
-  // Find active rules overlapping with booking dates
-  const candidateRules = await PricingRule.find({
-    isActive: true,
-    startDate: { $lt: reqCheckOut },
-    endDate: { $gt: reqCheckIn },
-  }).lean();
+  // Use pre-queried candidate rules if provided; otherwise fetch active rules overlapping with booking dates
+  const candidateRules =
+    preloadedCandidateRules !== null
+      ? preloadedCandidateRules
+      : await PricingRule.find({
+          isActive: true,
+          startDate: { $lt: reqCheckOut },
+          endDate: { $gt: reqCheckIn },
+        }).lean();
 
   if (candidateRules.length === 0) {
     return {

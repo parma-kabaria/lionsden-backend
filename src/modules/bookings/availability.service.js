@@ -2,6 +2,7 @@ import { Bungalow } from '../bungalows/bungalow.model.js';
 import { Booking } from './booking.model.js';
 import { Branch } from '../branches/branch.model.js';
 import { MaintenanceTicket } from '../maintenance/maintenance.model.js';
+import { PricingRule } from '../pricing/pricing.model.js';
 import { calculateApplicablePrice } from '../pricing/pricing.service.js';
 import {
   BOOKING_STATUS,
@@ -58,8 +59,15 @@ export const searchAvailability = async ({
     bungalowFilter.facilities = { $all: facilities };
   }
 
-  // 2. Query all matching bungalows in this branch
-  const allBungalows = await Bungalow.find(bungalowFilter).populate('branch', 'name code').lean();
+  // 2. Query all matching bungalows in this branch and candidate pricing rules in parallel
+  const [allBungalows, candidateRules] = await Promise.all([
+    Bungalow.find(bungalowFilter).populate('branch', 'name code').lean(),
+    PricingRule.find({
+      isActive: true,
+      startDate: { $lt: reqCheckOut },
+      endDate: { $gt: reqCheckIn },
+    }).lean(),
+  ]);
 
   if (allBungalows.length === 0) {
     return {
@@ -76,31 +84,31 @@ export const searchAvailability = async ({
 
   const bungalowIds = allBungalows.map(b => b._id);
 
-  // 3. Find active overlapping bookings
+  // 3. Find active overlapping bookings and blocking maintenance requests in parallel
   // Overlap condition: existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
-  const overlappingBookings = await Booking.find({
-    bungalow: { $in: bungalowIds },
-    status: { $ne: BOOKING_STATUS.CANCELLED },
-    checkIn: { $lt: reqCheckOut },
-    checkOut: { $gt: reqCheckIn },
-  })
-    .select('bungalow bookingId checkIn checkOut status')
-    .lean();
+  const [overlappingBookings, activeMaintenanceTickets] = await Promise.all([
+    Booking.find({
+      bungalow: { $in: bungalowIds },
+      status: { $ne: BOOKING_STATUS.CANCELLED },
+      checkIn: { $lt: reqCheckOut },
+      checkOut: { $gt: reqCheckIn },
+    })
+      .select('bungalow bookingId checkIn checkOut status')
+      .lean(),
+    MaintenanceTicket.find({
+      bungalow: { $in: bungalowIds },
+      status: {
+        $in: [
+          MAINTENANCE_STATUS.REPORTED,
+          MAINTENANCE_STATUS.APPROVED,
+          MAINTENANCE_STATUS.ASSIGNED,
+          MAINTENANCE_STATUS.IN_PROGRESS,
+        ],
+      },
+    }).lean(),
+  ]);
 
   const bookedBungalowIds = new Set(overlappingBookings.map(b => b.bungalow.toString()));
-
-  // 4. Find blocking and active maintenance requests
-  const activeMaintenanceTickets = await MaintenanceTicket.find({
-    bungalow: { $in: bungalowIds },
-    status: {
-      $in: [
-        MAINTENANCE_STATUS.REPORTED,
-        MAINTENANCE_STATUS.APPROVED,
-        MAINTENANCE_STATUS.ASSIGNED,
-        MAINTENANCE_STATUS.IN_PROGRESS,
-      ],
-    },
-  }).lean();
 
   const maintenanceMap = new Map();
   for (const ticket of activeMaintenanceTickets) {
@@ -135,8 +143,8 @@ export const searchAvailability = async ({
         description: t.problemDescription,
       }));
 
-    // Calculate dynamic pricing (standard vs peak festival pricing)
-    const pricing = await calculateApplicablePrice(bungalow, reqCheckIn, reqCheckOut);
+    // Calculate dynamic pricing with pre-queried rules (evaluated in-memory instantly)
+    const pricing = await calculateApplicablePrice(bungalow, reqCheckIn, reqCheckOut, candidateRules);
 
     const enrichedBungalow = {
       ...bungalow,

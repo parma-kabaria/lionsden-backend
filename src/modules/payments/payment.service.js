@@ -38,27 +38,27 @@ export const recordPayment = async (data, req, session = null) => {
   const receiptNumber = generateReceiptNumber();
   const userId = req?.user?._id || data.collectingUserId;
 
-  const [payment] = await Payment.create(
-    [
-      {
-        receiptNumber,
-        booking: booking._id,
-        branch: booking.branch,
-        customer: {
-          name: booking.customer.name,
-          phone: booking.customer.phone,
-        },
-        amount: data.amount,
-        type: data.type || PAYMENT_TYPES.BALANCE,
-        paymentMode: data.paymentMode,
-        transactionReference: data.transactionReference || '',
-        collectingUser: userId,
-        notes: data.notes || '',
-        idempotencyKey: data.idempotencyKey || null,
-      },
-    ],
-    { session }
-  );
+  const paymentDoc = {
+    receiptNumber,
+    booking: booking._id,
+    branch: booking.branch,
+    customer: {
+      name: booking.customer.name,
+      phone: booking.customer.phone,
+    },
+    amount: data.amount,
+    type: data.type || PAYMENT_TYPES.BALANCE,
+    paymentMode: data.paymentMode,
+    transactionReference: data.transactionReference || '',
+    collectingUser: userId,
+    notes: data.notes || '',
+  };
+
+  if (data.idempotencyKey) {
+    paymentDoc.idempotencyKey = data.idempotencyKey;
+  }
+
+  const [payment] = await Payment.create([paymentDoc], { session });
 
   // Update booking payment totals
   booking.totalPaid += data.amount;
